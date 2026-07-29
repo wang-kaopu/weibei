@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import XCTest
+import WeiBeiDevCore
 @testable import WeiBeiDevTool
 
 final class WeiBeiDevToolCommandTests: XCTestCase {
