@@ -11,6 +11,8 @@ public struct MarkdownAttachment: Equatable {
 }
 
 public enum MarkdownAttachmentStore {
+    private static let attachmentWriteLock = NSLock()
+
     public static func save(
         dataURL: String,
         originalName: String,
@@ -52,6 +54,8 @@ public enum MarkdownAttachmentStore {
             : URL(fileURLWithPath: originalName).deletingPathExtension().lastPathComponent
         let stem = safeFileStem(rawStem, fallback: "image", limit: 72)
 
+        attachmentWriteLock.lock()
+        defer { attachmentWriteLock.unlock() }
         var target = attachmentDirectory.appendingPathComponent("\(stem).\(ext)")
         var index = 2
         while FileManager.default.fileExists(atPath: target.path) {
@@ -59,7 +63,7 @@ public enum MarkdownAttachmentStore {
             index += 1
         }
 
-        try data.write(to: target, options: [.atomic])
+        try data.write(to: target, options: .atomic)
         return MarkdownAttachment(
             src: relativePath(to: target, markdownBaseURLString: markdownBaseURLString),
             alt: stem.replacingOccurrences(of: "-", with: " ")

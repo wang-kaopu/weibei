@@ -400,8 +400,7 @@ struct RichMarkdownEditorView: NSViewRepresentable {
         context.coordinator.markdown = $markdown
         context.coordinator.command = $command
         if context.coordinator.documentID != documentID {
-            context.coordinator.documentID = documentID
-            context.coordinator.setDocumentID(documentID)
+            context.coordinator.transition(toDocumentID: documentID)
         }
         context.coordinator.attachmentDirectory = attachmentDirectory
         context.coordinator.imageSchemeHandler.update(
@@ -458,6 +457,7 @@ struct RichMarkdownEditorView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.invalidateDocumentRequests()
         for name in scriptMessageNames {
             view.configuration.userContentController.removeScriptMessageHandler(forName: name)
         }
@@ -609,6 +609,8 @@ struct RichMarkdownEditorView: NSViewRepresentable {
         private var lastAppliedSearchQuery = ""
         private var lastAppliedFocusRequest = -1
         private var lastAppliedSelectionAskMarks = ""
+        private var documentRevision: UInt64 = 0
+        private var acceptsDocumentRequests = true
 
         init(
             documentID: String,
@@ -801,6 +803,26 @@ struct RichMarkdownEditorView: NSViewRepresentable {
             evaluate("window.WeiBeiEditor?.setDocumentID(\(Self.json(id)))")
         }
 
+        /**
+         * Advances the document generation before notifying the WebEditor.
+         *
+         * @param id - Newly active document identity
+         */
+        func transition(toDocumentID id: String) {
+            guard documentID != id else { return }
+            documentID = id
+            documentRevision &+= 1
+            setDocumentID(id)
+        }
+
+        /**
+         * Invalidates asynchronous document work when the native editor is dismantled.
+         */
+        func invalidateDocumentRequests() {
+            acceptsDocumentRequests = false
+            documentRevision &+= 1
+        }
+
         func setMarkdownBaseURL(_ url: String) {
             evaluate("window.WeiBeiEditor?.setMarkdownBaseURL(\(Self.json(url)))")
         }
@@ -923,6 +945,7 @@ struct RichMarkdownEditorView: NSViewRepresentable {
          * @param documentID - Document identity captured when the command was issued
          */
         private func presentImagePicker(requestID: String, documentID requestedDocumentID: String) {
+            let requestedDocumentRevision = documentRevision
             guard let window = webView?.window else {
                 evaluate("""
                 window.WeiBeiEditor?.rejectImagePicker(
@@ -942,7 +965,9 @@ struct RichMarkdownEditorView: NSViewRepresentable {
             panel.canChooseFiles = true
             panel.beginSheetModal(for: window) { [weak self] response in
                 guard let self else { return }
-                guard self.documentID == requestedDocumentID else {
+                guard self.acceptsDocumentRequests,
+                      self.documentID == requestedDocumentID,
+                      self.documentRevision == requestedDocumentRevision else {
                     self.evaluate("window.WeiBeiEditor?.discardImagePicker(\(Self.json(requestID)))")
                     return
                 }
@@ -975,8 +1000,24 @@ struct RichMarkdownEditorView: NSViewRepresentable {
                         )
                     }
                     DispatchQueue.main.async { [weak self] in
-                        guard let self else { return }
-                        guard self.documentID == requestedDocumentID else {
+                        guard let self else {
+                            if case let .success(attachment) = result {
+                                let savedFileURL = attachmentDirectory.appendingPathComponent(
+                                    URL(fileURLWithPath: attachment.src).lastPathComponent
+                                )
+                                try? FileManager.default.removeItem(at: savedFileURL)
+                            }
+                            return
+                        }
+                        guard self.acceptsDocumentRequests,
+                              self.documentID == requestedDocumentID,
+                              self.documentRevision == requestedDocumentRevision else {
+                            if case let .success(attachment) = result {
+                                let savedFileURL = attachmentDirectory.appendingPathComponent(
+                                    URL(fileURLWithPath: attachment.src).lastPathComponent
+                                )
+                                try? FileManager.default.removeItem(at: savedFileURL)
+                            }
                             self.evaluate("window.WeiBeiEditor?.discardImagePicker(\(Self.json(requestID)))")
                             return
                         }

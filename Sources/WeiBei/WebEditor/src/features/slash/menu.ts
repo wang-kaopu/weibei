@@ -167,6 +167,7 @@ export function createSlashFeature({
     const activeID = activeCommand
       ? `weibei-slash-command-${activeCommand.id}`
       : "";
+    slashMenuElement.setAttribute("aria-activedescendant", activeID);
     view.dom.setAttribute("aria-controls", slashMenuElement.id);
     view.dom.setAttribute(
       "aria-expanded",

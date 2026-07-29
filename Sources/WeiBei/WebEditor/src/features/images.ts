@@ -152,7 +152,11 @@ export function createImageFeature({
   };
 
   const requestAttachment = async (file: File): Promise<SavedImage> => {
+    const documentID = bridge.getDocumentID();
     const { alt, src } = await readImageAsBase64(file);
+    if (documentID !== bridge.getDocumentID()) {
+      throw new DOMException("Document changed", "AbortError");
+    }
     if (!bridge.hasHandler("imageAttachmentRequested")) {
       return { alt, src };
     }
@@ -161,7 +165,7 @@ export function createImageFeature({
       pendingAttachments.set(id, {
         resolve,
         reject,
-        documentID: bridge.getDocumentID(),
+        documentID,
       });
       bridge.post("imageAttachmentRequested", {
         id,
