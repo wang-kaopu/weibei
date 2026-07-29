@@ -11,7 +11,7 @@ final class WorkspaceStoreNavigationAndPaneTests: WorkspaceStoreTestCase {
     func testStudySessionLifecyclePreservesIndependentMessages() throws {
         let store = makeStore(in: try makeTemporaryWorkspace())
         let firstSessionID = try XCTUnwrap(store.activeStudySessionID)
-        store.messages = [AgentMessage(role: .user, text: "First session")]
+        store.messages = [AgentMessage(role: .user, text: "First session", source: nil)]
 
         store.createStudySession()
         let secondSessionID = try XCTUnwrap(store.activeStudySessionID)

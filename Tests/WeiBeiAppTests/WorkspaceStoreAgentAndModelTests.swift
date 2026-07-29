@@ -17,7 +17,7 @@ private actor ModelListFetchGate {
         if let models = pendingModels.removeValue(forKey: requestIndex) {
             return models
         }
-        try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             continuations[requestIndex] = continuation
         }
     }
@@ -70,12 +70,12 @@ private actor AgentRequestGate {
      * 恢复被暂停的请求。
      */
     func succeed(with reply: StudyAgentReply) -> Bool {
-        guard let replyContinuation else {
+        guard let continuation = replyContinuation else {
             pendingReply = reply
             return false
         }
-        replyContinuation.resume(returning: reply)
-        replyContinuation = nil
+        self.replyContinuation = nil
+        continuation.resume(returning: reply)
         return true
     }
 }
@@ -141,7 +141,7 @@ final class WorkspaceStoreAgentAndModelTests: WorkspaceStoreTestCase {
                 return try await gate.fetch()
             }
         )
-        store.agentProviderID = .openRouter
+        store.agentProviderID = .openrouter
 
         let firstTask = Task { await store.refreshModelList() }
         await fulfillment(of: [firstStarted], timeout: 5)
@@ -172,12 +172,12 @@ final class WorkspaceStoreAgentAndModelTests: WorkspaceStoreTestCase {
                 throw ModelListTestFailure.unavailable
             }
         )
-        store.agentProviderID = .openRouter
+        store.agentProviderID = .openrouter
 
         await store.refreshModelList()
 
         XCTAssertEqual(fetchCount, 1)
-        XCTAssertEqual(store.availableModels, AgentProviderID.openRouter.recommendedModels)
+        XCTAssertEqual(store.availableModels, AgentProviderID.openrouter.recommendedModels)
         guard case let .failed(message) = store.modelListStatus else {
             return XCTFail("Expected a failed model-list status")
         }
