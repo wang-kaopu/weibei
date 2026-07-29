@@ -44,7 +44,7 @@ final class SelectionBehaviorTests: XCTestCase {
             """
         )
 
-        XCTAssertEqual(cleaned, "重点\n实际利率等于名义利率减去预期通胀。\n已完成项")
+        XCTAssertEqual(cleaned, "重点\n**实际利率**等于名义利率减去预期通胀。\n已完成项")
     }
 
     /**

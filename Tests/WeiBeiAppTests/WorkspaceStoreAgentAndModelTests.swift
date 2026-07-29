@@ -49,6 +49,7 @@ private actor AgentRequestRecorder {
 
 private actor AgentRequestGate {
     private(set) var request: StudyAgentRequest?
+    private var startedContinuation: CheckedContinuation<Void, Never>?
     private var replyContinuation: CheckedContinuation<StudyAgentReply, Never>?
     private var pendingReply: StudyAgentReply?
 
@@ -57,12 +58,24 @@ private actor AgentRequestGate {
      */
     func execute(_ request: StudyAgentRequest) async -> StudyAgentReply {
         self.request = request
+        startedContinuation?.resume()
+        startedContinuation = nil
         if let pendingReply {
             self.pendingReply = nil
             return pendingReply
         }
         return await withCheckedContinuation { continuation in
             replyContinuation = continuation
+        }
+    }
+
+    /**
+     * 等待请求实际进入执行边界，避免用固定时间猜测后台索引何时结束。
+     */
+    func waitUntilStarted() async {
+        guard request == nil else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuation = continuation
         }
     }
 
@@ -242,7 +255,7 @@ final class WorkspaceStoreAgentAndModelTests: WorkspaceStoreTestCase {
         let request = await recorder.request
         XCTAssertEqual(request?.question, "Explain this")
         XCTAssertEqual(request?.noteText, "# Snapshot note\n")
-        XCTAssertEqual(request?.selectionText, "selected evidence")
+        XCTAssertEqual(request?.selectionText, "片段 1（来源：Reader）：\nselected evidence")
         XCTAssertTrue(request?.contextRevision.hasSuffix(request?.id.uuidString.lowercased() ?? "missing") == true)
         XCTAssertEqual(store.messages.last?.text, "Recorded answer")
         XCTAssertFalse(store.isAskingAgent)
@@ -254,17 +267,15 @@ final class WorkspaceStoreAgentAndModelTests: WorkspaceStoreTestCase {
     @MainActor
     func testAgentRequestDiscardsReplyAfterWorkspaceRevisionChanges() async throws {
         let gate = AgentRequestGate()
-        let requestStarted = expectation(description: "agent request started")
         let store = makeStore(
             in: try makeTemporaryWorkspace(),
             agentRequestExecutor: { request in
-                requestStarted.fulfill()
                 return await gate.execute(request)
             }
         )
         store.agentDraft = "Explain the current material"
         let requestTask = Task { await store.askAgentAndWait() }
-        await fulfillment(of: [requestStarted], timeout: 5)
+        await gate.waitUntilStarted()
 
         store.updateSelection(
             "new evidence",
@@ -301,17 +312,15 @@ final class WorkspaceStoreAgentAndModelTests: WorkspaceStoreTestCase {
             options: [.atomic]
         )
         let gate = AgentRequestGate()
-        let requestStarted = expectation(description: "agent request started")
         let store = makeStore(
             in: directory,
             agentRequestExecutor: { request in
-                requestStarted.fulfill()
                 return await gate.execute(request)
             }
         )
         store.agentDraft = "Explain the current material"
         let requestTask = Task { await store.askAgentAndWait() }
-        await fulfillment(of: [requestStarted], timeout: 5)
+        await gate.waitUntilStarted()
 
         store.resolveLearningMemory(memory.id)
         let resumedRequest = await gate.succeed(with: StudyAgentReply(text: "Stale answer", backend: .offline))
